@@ -1,0 +1,84 @@
+name: Security Hardening CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - security-hardening-a-b
+  pull_request:
+    branches:
+      - security-hardening-a-b
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 25
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install cgo and SQLite dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc pkg-config libsqlite3-dev
+
+      - name: Check Go formatting
+        run: |
+          files="$(git ls-files '*.go')"
+          if [ -n "$(gofmt -l $files)" ]; then
+            gofmt -l $files
+            exit 1
+          fi
+
+      - name: Verify SQLite tests are not skipped
+        run: |
+          set -o pipefail
+          go test -v -count=1 ./database ./sub | tee sqlite-tests.log
+          grep -q -- "--- PASS: TestInitDBDoesNotCreateDefaultAdminPassword" sqlite-tests.log
+          grep -q -- "--- PASS: TestSubscriptionLookupUsesTokenNotClientName" sqlite-tests.log
+          if grep -q -- "--- SKIP: TestInitDBDoesNotCreateDefaultAdminPassword" sqlite-tests.log; then
+            echo "TestInitDBDoesNotCreateDefaultAdminPassword was skipped" >&2
+            exit 1
+          fi
+          if grep -q -- "--- SKIP: TestSubscriptionLookupUsesTokenNotClientName" sqlite-tests.log; then
+            echo "TestSubscriptionLookupUsesTokenNotClientName was skipped" >&2
+            exit 1
+          fi
+
+      - name: Run Go tests
+        run: go test -v ./...
+
+      - name: Run Go vet
+        run: go vet ./...
+
+      - name: Build Go binary
+        run: go build
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Audit production frontend dependencies
+        working-directory: frontend
+        run: npm audit --omit=dev
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build

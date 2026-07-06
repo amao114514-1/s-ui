@@ -1,7 +1,7 @@
 ---
 services:
   s-ui:
-    image: alireza7/s-ui
+    image: ${S_UI_IMAGE:?set S_UI_IMAGE to a pinned image tag}
     container_name: s-ui
     hostname: "s-ui"
     volumes:

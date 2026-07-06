@@ -49,21 +49,27 @@
 [API-Documentation Wiki](https://github.com/alireza0/s-ui/wiki/API-Documentation)
 
 ## Default Installation Information
+- Panel Listen: 127.0.0.1
 - Panel Port: 2095
 - Panel Path: /app/
+- Subscription Listen: 127.0.0.1
 - Subscription Port: 2096
 - Subscription Path: /sub/
-- User/Password: admin
+- Admin credentials: generated randomly on first initialization. Use the installer output or `s-ui admin -show` on the server console.
 
-## Install & Upgrade to Latest Version
+The panel and subscription service are intended to stay behind loopback by default. Access them through a reverse proxy, VPN, SSH tunnel, or an explicit IP allowlist; do not expose the management ports directly to the public Internet.
+
+## Install & Upgrade from a Pinned Release
 
 ### Linux/macOS
 ```sh
-bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+# The hardened installer refuses implicit latest releases.
+# Set the expected SHA256 for the release artifact before running it.
+S_UI_SHA256=<sha256> bash install.sh <version>
 ```
 
 ### Windows
-1. Download the latest Windows release from [GitHub Releases](https://github.com/alireza0/s-ui/releases/latest)
+1. Download a pinned Windows release from [GitHub Releases](https://github.com/alireza0/s-ui/releases)
 2. Extract the ZIP file
 3. Run `install-windows.bat` as Administrator
 4. Follow the installation wizard
@@ -73,22 +79,24 @@ bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.s
 **Step 1:** To install your desired legacy version, add the version to the end of the installation command. e.g., ver `1.0.0`:
 
 ```sh
-VERSION=1.0.0 && bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/$VERSION/install.sh) $VERSION
+VERSION=1.0.0
+S_UI_SHA256=<sha256> bash <(curl -fsSL https://raw.githubusercontent.com/alireza0/s-ui/$VERSION/install.sh) $VERSION
 ```
 
 ## Manual installation
 
 ### Linux/macOS
-1. Get the latest version of S-UI based on your OS/Architecture from GitHub: [https://github.com/alireza0/s-ui/releases/latest](https://github.com/alireza0/s-ui/releases/latest)
-2. **OPTIONAL** Get the latest version of `s-ui.sh` [https://raw.githubusercontent.com/alireza0/s-ui/master/s-ui.sh](https://raw.githubusercontent.com/alireza0/s-ui/master/s-ui.sh)
-3. **OPTIONAL** Copy `s-ui.sh` to /usr/bin/ and run `chmod +x /usr/bin/s-ui`.
-4. Extract s-ui tar.gz file to a directory of your choice and navigate to the directory where you extracted the tar.gz file.
-5. Copy *.service files to /etc/systemd/system/ and run `systemctl daemon-reload`.
-6. Enable autostart and start S-UI service using `systemctl enable s-ui --now`
-7. Start sing-box service using `systemctl enable sing-box --now`
+1. Get a pinned S-UI release for your OS/Architecture from GitHub: [https://github.com/alireza0/s-ui/releases](https://github.com/alireza0/s-ui/releases)
+2. Verify the downloaded archive checksum before extracting it.
+3. **OPTIONAL** Copy `s-ui.sh` from the same pinned release/source tree.
+4. **OPTIONAL** Copy `s-ui.sh` to /usr/bin/ and run `chmod +x /usr/bin/s-ui`.
+5. Extract s-ui tar.gz file to a directory of your choice and navigate to the directory where you extracted the tar.gz file.
+6. Copy *.service files to /etc/systemd/system/ and run `systemctl daemon-reload`.
+7. Enable autostart and start S-UI service using `systemctl enable s-ui --now`
+8. Start sing-box service using `systemctl enable sing-box --now`
 
 ### Windows
-1. Get the latest Windows version from GitHub: [https://github.com/alireza0/s-ui/releases/latest](https://github.com/alireza0/s-ui/releases/latest)
+1. Get a pinned Windows version from GitHub: [https://github.com/alireza0/s-ui/releases](https://github.com/alireza0/s-ui/releases)
 2. Download the appropriate Windows package (e.g., `s-ui-windows-amd64.zip`)
 3. Extract the ZIP file to a directory of your choice
 4. Run `install-windows.bat` as Administrator
@@ -128,7 +136,8 @@ curl -fsSL https://get.docker.com | sh
 
 ```shell
 mkdir s-ui && cd s-ui
-wget -q https://raw.githubusercontent.com/alireza0/s-ui/master/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/amao114514-1/s-ui/security-hardening-a-b/docker-compose.yml
+export S_UI_IMAGE=alireza7/s-ui:REPLACE_WITH_PINNED_VERSION
 docker compose up -d
 ```
 
@@ -139,15 +148,15 @@ mkdir s-ui && cd s-ui
 docker run -itd \
     -p 127.0.0.1:2095:2095 -p 127.0.0.1:2096:2096 -p 443:443 -p 80:80 \
     -v $PWD/db/:/app/db/ \
-    -v $PWD/cert/:/root/cert/ \
+    -v $PWD/cert/:/app/cert/ \
     --name s-ui --restart=unless-stopped \
-    alireza7/s-ui:<pinned-version>
+    alireza7/s-ui:REPLACE_WITH_PINNED_VERSION
 ```
 
 > Build your own image
 
 ```shell
-git clone https://github.com/alireza0/s-ui
+git clone --branch security-hardening-a-b https://github.com/amao114514-1/s-ui
 git submodule update --init --recursive
 docker build -t s-ui .
 ```
@@ -167,7 +176,7 @@ docker build -t s-ui .
 ### Clone the repository
 ```shell
 # clone repository
-git clone https://github.com/alireza0/s-ui
+git clone --branch security-hardening-a-b https://github.com/amao114514-1/s-ui
 # clone submodules
 git submodule update --init --recursive
 ```

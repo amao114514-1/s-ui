@@ -20,12 +20,14 @@ type User struct {
 	Username   string `json:"username" form:"username"`
 	Password   string `json:"password" form:"password"`
 	LastLogins string `json:"lastLogin"`
+	SessionVersion int64 `json:"-" gorm:"default:0;not null"`
 }
 
 type Client struct {
 	Id       uint            `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
 	Enable   bool            `json:"enable" form:"enable"`
 	Name     string          `json:"name" form:"name"`
+	SubscriptionToken string  `json:"subscriptionToken" form:"subscriptionToken" gorm:"column:subscription_token;uniqueIndex"`
 	Config   json.RawMessage `json:"config,omitempty" form:"config"`
 	Inbounds json.RawMessage `json:"inbounds" form:"inbounds"`
 	Links    json.RawMessage `json:"links,omitempty" form:"links"`

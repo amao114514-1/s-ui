@@ -222,6 +222,13 @@ func ImportDB(file multipart.File) error {
 	if err != nil {
 		return common.NewErrorf("Error checking db: %v", err)
 	}
+	if err := validateImportedSchema(newDb); err != nil {
+		newDb_db, _ := newDb.DB()
+		if newDb_db != nil {
+			newDb_db.Close()
+		}
+		return err
+	}
 	newDb_db, _ := newDb.DB()
 	if newDb_db != nil {
 		newDb_db.Close()
@@ -273,6 +280,16 @@ func ImportDB(file multipart.File) error {
 		return common.NewErrorf("Error restarting app: %v", err)
 	}
 
+	return nil
+}
+
+func validateImportedSchema(candidate *gorm.DB) error {
+	requiredTables := []string{"settings", "users", "clients"}
+	for _, table := range requiredTables {
+		if !candidate.Migrator().HasTable(table) {
+			return common.NewErrorf("backup db is missing required table: %s", table)
+		}
+	}
 	return nil
 }
 

@@ -1,7 +1,7 @@
 package api
 
 import (
-	"strings"
+	"net/http"
 
 	"github.com/alireza0/s-ui/util/common"
 
@@ -22,8 +22,7 @@ func NewAPIHandler(g *gin.RouterGroup, a2 *APIv2Handler) {
 
 func (a *APIHandler) initRouter(g *gin.RouterGroup) {
 	g.Use(func(c *gin.Context) {
-		path := c.Request.URL.Path
-		if !strings.HasSuffix(path, "login") && !strings.HasSuffix(path, "logout") {
+		if c.Request.Method != http.MethodPost || c.Param("postAction") != "login" {
 			checkLogin(c)
 		}
 	})
@@ -35,11 +34,30 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 	loginUser := GetLoginUser(c)
 	action := c.Param("postAction")
 
+	if action != "login" {
+		webDomain, err := a.SettingService.GetWebDomain()
+		if err != nil {
+			jsonMsg(c, "failed", err)
+			return
+		}
+		if err := checkSameOrigin(c, webDomain); err != nil {
+			jsonMsg(c, "failed", err)
+			return
+		}
+		if err := checkCSRF(c); err != nil {
+			jsonMsg(c, "failed", err)
+			return
+		}
+	}
+
 	switch action {
 	case "login":
 		a.ApiService.Login(c)
+	case "logout":
+		a.ApiService.Logout(c)
 	case "changePass":
 		a.ApiService.ChangePass(c)
+		a.apiv2.ReloadTokens()
 	case "save":
 		a.ApiService.Save(c, loginUser)
 	case "restartApp":
@@ -54,12 +72,18 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.SubConvert(c)
 	case "importdb":
 		a.ApiService.ImportDb(c)
+	case "getdb":
+		a.ApiService.GetDb(c)
+	case "singbox-config":
+		a.ApiService.GetSingboxConfig(c)
 	case "addToken":
 		a.ApiService.AddToken(c)
 		a.apiv2.ReloadTokens()
 	case "deleteToken":
 		a.ApiService.DeleteToken(c)
 		a.apiv2.ReloadTokens()
+	case "rotateSubscriptionToken":
+		a.ApiService.RotateSubscriptionToken(c)
 	case "getCertPing":
 		a.ApiService.GetCertPing(c)
 	default:
@@ -71,8 +95,8 @@ func (a *APIHandler) getHandler(c *gin.Context) {
 	action := c.Param("getAction")
 
 	switch action {
-	case "logout":
-		a.ApiService.Logout(c)
+	case "auth":
+		a.ApiService.Auth(c)
 	case "load":
 		a.ApiService.LoadData(c)
 	case "inbounds", "outbounds", "endpoints", "services", "tls", "clients", "config":
@@ -97,12 +121,8 @@ func (a *APIHandler) getHandler(c *gin.Context) {
 		a.ApiService.CheckChanges(c)
 	case "keypairs":
 		a.ApiService.GetKeypairs(c)
-	case "getdb":
-		a.ApiService.GetDb(c)
 	case "tokens":
 		a.ApiService.GetTokens(c)
-	case "singbox-config":
-		a.ApiService.GetSingboxConfig(c)
 	case "checkOutbound":
 		a.ApiService.GetCheckOutbound(c)
 	default:

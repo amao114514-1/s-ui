@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -241,7 +242,14 @@ func (a *ApiService) GetKeypairs(c *gin.Context) {
 }
 
 func (a *ApiService) GetDb(c *gin.Context) {
+	if err := requireRecentLogin(c); err != nil {
+		jsonMsg(c, "getdb", err)
+		return
+	}
 	exclude := c.Query("exclude")
+	if exclude == "" {
+		exclude = c.PostForm("exclude")
+	}
 	db, err := database.GetDb(exclude)
 	if err != nil {
 		jsonMsg(c, "", err)
@@ -281,7 +289,14 @@ func (a *ApiService) Login(c *gin.Context) {
 		logger.Warning("login failed: ", err)
 	}
 
-	jsonMsg(c, "", nil)
+	a.Auth(c)
+}
+
+func (a *ApiService) Auth(c *gin.Context) {
+	jsonObj(c, map[string]string{
+		"username":  GetLoginUser(c),
+		"csrfToken": GetCSRFToken(c),
+	}, nil)
 }
 
 func (a *ApiService) ChangePass(c *gin.Context) {
@@ -292,6 +307,7 @@ func (a *ApiService) ChangePass(c *gin.Context) {
 	err := a.UserService.ChangePass(id, oldPass, newUsername, newPass)
 	if err == nil {
 		logger.Info("change user credentials success")
+		ClearSession(c)
 		jsonMsg(c, "save", nil)
 	} else {
 		logger.Warning("change user credentials failed:", err)
@@ -300,7 +316,11 @@ func (a *ApiService) ChangePass(c *gin.Context) {
 }
 
 func (a *ApiService) Save(c *gin.Context, loginUser string) {
-	hostname := getHostname(c)
+	hostname, err := a.SettingService.GetCanonicalHost(getHostname(c))
+	if err != nil {
+		jsonMsg(c, "save", err)
+		return
+	}
 	obj := c.Request.FormValue("object")
 	act := c.Request.FormValue("action")
 	data := c.Request.FormValue("data")
@@ -348,6 +368,11 @@ func (a *ApiService) SubConvert(c *gin.Context) {
 }
 
 func (a *ApiService) ImportDb(c *gin.Context) {
+	if err := requireRecentLogin(c); err != nil {
+		jsonMsg(c, "importdb", err)
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 20<<20)
 	file, _, err := c.Request.FormFile("db")
 	if err != nil {
 		jsonMsg(c, "", err)
@@ -392,11 +417,23 @@ func (a *ApiService) AddToken(c *gin.Context) {
 
 func (a *ApiService) DeleteToken(c *gin.Context) {
 	tokenId := c.Request.FormValue("id")
-	err := a.UserService.DeleteToken(tokenId)
+	loginUser := GetLoginUser(c)
+	err := a.UserService.DeleteToken(tokenId, loginUser)
 	jsonMsg(c, "", err)
 }
 
+func (a *ApiService) RotateSubscriptionToken(c *gin.Context) {
+	clientId := c.Request.FormValue("id")
+	token, err := a.ClientService.RotateSubscriptionToken(clientId)
+	jsonObj(c, token, err)
+}
+
 func (a *ApiService) GetSingboxConfig(c *gin.Context) {
+	if err := requireRecentLogin(c); err != nil {
+		c.Status(403)
+		c.Writer.WriteString(err.Error())
+		return
+	}
 	rawConfig, err := a.ConfigService.GetConfig("")
 	if err != nil {
 		c.Status(400)
@@ -416,8 +453,13 @@ func (a *ApiService) GetCheckOutbound(c *gin.Context) {
 }
 
 func (a *ApiService) GetCertPing(c *gin.Context) {
+	if err := checkCertPingRate(c); err != nil {
+		jsonMsg(c, "getCertPing", err)
+		return
+	}
 	domain := c.PostForm("domain")
 	port := c.PostForm("port")
+	logger.Infof("cert ping requested for %s:%s by %s", domain, port, getRemoteIp(c))
 	tlsPing, err := util.GetTlsPing(domain, port)
 	jsonObj(c, tlsPing, err)
 }

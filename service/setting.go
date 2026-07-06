@@ -2,6 +2,8 @@ package service
 
 import (
 	"encoding/json"
+	"net"
+	"net/url"
 	"os"
 	"runtime"
 	"strconv"
@@ -42,7 +44,7 @@ var defaultConfig = `{
 }`
 
 var defaultValueMap = map[string]string{
-	"webListen":          "",
+	"webListen":          "127.0.0.1",
 	"webDomain":          "",
 	"webPort":            "2095",
 	"secret":             common.Random(32),
@@ -54,7 +56,7 @@ var defaultValueMap = map[string]string{
 	"trafficAge":         "30",
 	"statsBucketSeconds": "60",
 	"timeLocation":       "Asia/Tehran",
-	"subListen":          "",
+	"subListen":          "127.0.0.1",
 	"subPort":            "2096",
 	"subPath":            "/sub/",
 	"subDomain":          "",
@@ -380,12 +382,52 @@ func (s *SettingService) GetFinalSubURI(host string) (string, error) {
 	}
 	if (*allSetting)["subDomain"] != "" {
 		host = (*allSetting)["subDomain"]
+	} else if (*allSetting)["webDomain"] != "" {
+		host = (*allSetting)["webDomain"]
+	} else if !isLocalHost(host) {
+		host = "127.0.0.1"
 	}
 	port := ":" + (*allSetting)["subPort"]
-	if (port == "80" && protocol == "http") || (port == "443" && protocol == "https") {
+	if (port == ":80" && protocol == "http") || (port == ":443" && protocol == "https") {
 		port = ""
 	}
 	return protocol + "://" + host + port + (*allSetting)["subPath"], nil
+}
+
+func (s *SettingService) GetCanonicalHost(requestHost string) (string, error) {
+	allSetting, err := s.GetAllSetting()
+	if err != nil {
+		return "", err
+	}
+	if (*allSetting)["webDomain"] != "" {
+		return (*allSetting)["webDomain"], nil
+	}
+	if (*allSetting)["webURI"] != "" {
+		if parsed, err := url.Parse((*allSetting)["webURI"]); err == nil && parsed.Hostname() != "" {
+			return parsed.Hostname(), nil
+		}
+	}
+	if isLocalHost(requestHost) {
+		return requestHost, nil
+	}
+	return "127.0.0.1", nil
+}
+
+func isLocalHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	if strings.Contains(host, ":") {
+		if splitHost, _, err := net.SplitHostPort(host); err == nil {
+			host = splitHost
+		}
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *SettingService) GetConfig() (string, error) {

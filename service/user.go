@@ -43,12 +43,14 @@ func (s *UserService) UpdateFirstUser(username string, password string) error {
 	if database.IsNotFound(err) {
 		user.Username = username
 		user.Password = hashedPass
+		user.SessionVersion = time.Now().Unix()
 		return db.Model(model.User{}).Create(user).Error
 	} else if err != nil {
 		return err
 	}
 	user.Username = username
 	user.Password = hashedPass
+	user.SessionVersion = time.Now().Unix()
 	return db.Save(user).Error
 }
 
@@ -125,7 +127,11 @@ func (s *UserService) ChangePass(id string, oldPass string, newUser string, newP
 	}
 	user.Username = newUser
 	user.Password = hashedPass
-	return db.Save(user).Error
+	user.SessionVersion = time.Now().Unix()
+	if err := db.Save(user).Error; err != nil {
+		return err
+	}
+	return db.Model(model.Tokens{}).Where("user_id = ?", user.Id).Delete(&model.Tokens{}).Error
 }
 
 func (s *UserService) LoadTokens() ([]byte, error) {
@@ -181,7 +187,9 @@ func (s *UserService) AddToken(username string, expiry int64, desc string) (stri
 	return token.Token, nil
 }
 
-func (s *UserService) DeleteToken(id string) error {
+func (s *UserService) DeleteToken(id string, username string) error {
 	db := database.GetDB()
-	return db.Model(model.Tokens{}).Where("id = ?", id).Delete(&model.Tokens{}).Error
+	return db.Model(model.Tokens{}).
+		Where("id = ? AND user_id = (select id from users where username = ?)", id, username).
+		Delete(&model.Tokens{}).Error
 }

@@ -1,7 +1,9 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/alireza0/s-ui/logger"
@@ -18,7 +20,8 @@ type TokenInMemory struct {
 
 type APIv2Handler struct {
 	ApiService
-	tokens *[]TokenInMemory
+	tokensMu sync.RWMutex
+	tokens   []TokenInMemory
 }
 
 func NewAPIv2Handler(g *gin.RouterGroup) *APIv2Handler {
@@ -37,26 +40,25 @@ func (a *APIv2Handler) initRouter(g *gin.RouterGroup) {
 }
 
 func (a *APIv2Handler) postHandler(c *gin.Context) {
-	username := a.findUsername(c)
 	action := c.Param("postAction")
 
 	switch action {
 	case "save":
-		a.ApiService.Save(c, username)
+		a.rejectHighRiskTokenAction(c, action)
 	case "restartApp":
-		a.ApiService.RestartApp(c)
+		a.rejectHighRiskTokenAction(c, action)
 	case "restartSb":
-		a.ApiService.RestartSb(c)
+		a.rejectHighRiskTokenAction(c, action)
 	case "resetTraffic":
-		a.ApiService.ResetTraffic(c)
+		a.rejectHighRiskTokenAction(c, action)
 	case "linkConvert":
 		a.ApiService.LinkConvert(c)
 	case "subConvert":
-		a.ApiService.SubConvert(c)
+		a.rejectHighRiskTokenAction(c, action)
 	case "importdb":
-		a.ApiService.ImportDb(c)
+		a.rejectHighRiskTokenAction(c, action)
 	case "getCertPing":
-		a.ApiService.GetCertPing(c)
+		a.rejectHighRiskTokenAction(c, action)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}
@@ -91,9 +93,9 @@ func (a *APIv2Handler) getHandler(c *gin.Context) {
 	case "keypairs":
 		a.ApiService.GetKeypairs(c)
 	case "getdb":
-		a.ApiService.GetDb(c)
+		a.rejectHighRiskTokenAction(c, action)
 	case "checkOutbound":
-		a.ApiService.GetCheckOutbound(c)
+		a.rejectHighRiskTokenAction(c, action)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}
@@ -101,12 +103,17 @@ func (a *APIv2Handler) getHandler(c *gin.Context) {
 
 func (a *APIv2Handler) findUsername(c *gin.Context) string {
 	token := c.Request.Header.Get("Token")
-	for index, t := range *a.tokens {
-		if t.Expiry > 0 && t.Expiry < time.Now().Unix() {
-			(*a.tokens) = append((*a.tokens)[:index], (*a.tokens)[index+1:]...)
+	if token == "" {
+		return ""
+	}
+	now := time.Now().Unix()
+	a.tokensMu.RLock()
+	defer a.tokensMu.RUnlock()
+	for _, t := range a.tokens {
+		if t.Expiry > 0 && t.Expiry < now {
 			continue
 		}
-		if t.Token == token {
+		if subtle.ConstantTimeCompare([]byte(t.Token), []byte(token)) == 1 {
 			return t.Username
 		}
 	}
@@ -131,8 +138,14 @@ func (a *APIv2Handler) ReloadTokens() {
 		if err != nil {
 			logger.Error("unable to load tokens: ", err)
 		}
-		a.tokens = &newTokens
+		a.tokensMu.Lock()
+		a.tokens = newTokens
+		a.tokensMu.Unlock()
 	} else {
 		logger.Error("unable to load tokens: ", err)
 	}
+}
+
+func (a *APIv2Handler) rejectHighRiskTokenAction(c *gin.Context, action string) {
+	jsonMsg(c, "failed", common.NewError("api token is not allowed to call high-risk action: ", action))
 }

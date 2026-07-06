@@ -39,7 +39,7 @@ func (s *ClientService) GetAll() (*[]model.Client, error) {
 	db := database.GetDB()
 	var clients []model.Client
 	err := db.Model(model.Client{}).
-		Select("`id`, `enable`, `name`, `desc`, `group`, `remark`, `inbounds`, `up`, `down`, `volume`, `expiry`, `created_at`, `online_at`").
+		Select("`id`, `enable`, `name`, `subscription_token`, `desc`, `group`, `remark`, `inbounds`, `up`, `down`, `volume`, `expiry`, `created_at`, `online_at`").
 		Scan(&clients).Error
 	if err != nil {
 		return nil, err
@@ -61,6 +61,7 @@ func (s *ClientService) Save(tx *gorm.DB, act string, data json.RawMessage, host
 		if err = setConfigIdentity(&client); err != nil {
 			return nil, err
 		}
+		s.ensureSubscriptionToken(&client)
 		err = s.updateLinksWithFixedInbounds(tx, []*model.Client{&client}, hostname)
 		if err != nil {
 			return nil, err
@@ -72,7 +73,7 @@ func (s *ClientService) Save(tx *gorm.DB, act string, data json.RawMessage, host
 				return nil, err
 			}
 			// Preserve managed timestamps (immutable createdAt, stats-managed onlineAt)
-			s.preserveTimestamps(tx, &client)
+			s.preserveExistingFields(tx, &client)
 		} else {
 			client.CreatedAt = time.Now().Unix()
 			err = json.Unmarshal(client.Inbounds, &inboundIds)
@@ -95,6 +96,7 @@ func (s *ClientService) Save(tx *gorm.DB, act string, data json.RawMessage, host
 			if err = setConfigIdentity(client); err != nil {
 				return nil, err
 			}
+			s.ensureSubscriptionToken(client)
 			client.CreatedAt = now
 			var ids []uint
 			if err = json.Unmarshal(client.Inbounds, &ids); err != nil {
@@ -124,7 +126,8 @@ func (s *ClientService) Save(tx *gorm.DB, act string, data json.RawMessage, host
 			if err = setConfigIdentity(client); err != nil {
 				return nil, err
 			}
-			s.preserveTimestamps(tx, client)
+			s.preserveExistingFields(tx, client)
+			s.ensureSubscriptionToken(client)
 			if len(changedInboundIds) > 0 {
 				inboundIds = common.UnionUintArray(inboundIds, changedInboundIds)
 			}
@@ -188,14 +191,36 @@ func (s *ClientService) Save(tx *gorm.DB, act string, data json.RawMessage, host
 	return inboundIds, nil
 }
 
-func (s *ClientService) preserveTimestamps(tx *gorm.DB, client *model.Client) {
+func (s *ClientService) ensureSubscriptionToken(client *model.Client) {
+	if client.SubscriptionToken == "" {
+		client.SubscriptionToken = common.Random(32)
+	}
+}
+
+func (s *ClientService) preserveExistingFields(tx *gorm.DB, client *model.Client) {
 	var existing model.Client
-	if err := tx.Model(model.Client{}).Select("created_at", "online_at").
+	if err := tx.Model(model.Client{}).Select("created_at", "online_at", "subscription_token").
 		Where("id = ?", client.Id).First(&existing).Error; err != nil {
 		return
 	}
 	client.CreatedAt = existing.CreatedAt
 	client.OnlineAt = existing.OnlineAt
+	if client.SubscriptionToken == "" {
+		client.SubscriptionToken = existing.SubscriptionToken
+	}
+}
+
+func (s *ClientService) RotateSubscriptionToken(id string) (string, error) {
+	token := common.Random(32)
+	db := database.GetDB()
+	result := db.Model(model.Client{}).Where("id = ?", id).Update("subscription_token", token)
+	if result.Error != nil {
+		return "", result.Error
+	}
+	if result.RowsAffected == 0 {
+		return "", common.NewError("client not found")
+	}
+	return token, nil
 }
 
 func (s *ClientService) updateLinksWithFixedInbounds(tx *gorm.DB, clients []*model.Client, hostname string) error {

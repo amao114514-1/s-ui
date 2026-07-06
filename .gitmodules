@@ -1,4 +1,4 @@
 [submodule "frontend"]
 	path = frontend
 	url = https://github.com/amao114514-1/s-ui-frontend.git
-	branch = main
+	branch = security-hardening-a-b

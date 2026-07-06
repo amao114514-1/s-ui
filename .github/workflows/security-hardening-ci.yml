@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CGO_ENABLED: "1"
+      GO_BUILD_TAGS: "with_utls"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6.0.2
@@ -50,7 +51,7 @@ jobs:
       - name: Verify SQLite tests are not skipped
         run: |
           set -o pipefail
-          go test -v -count=1 ./database ./sub | tee sqlite-tests.log
+          go test -tags "${GO_BUILD_TAGS}" -v -count=1 ./database ./sub | tee sqlite-tests.log
           grep -q -- "--- PASS: TestInitDBDoesNotCreateDefaultAdminPassword" sqlite-tests.log
           grep -q -- "--- PASS: TestSubscriptionLookupUsesTokenNotClientName" sqlite-tests.log
           if grep -q -- "--- SKIP: TestInitDBDoesNotCreateDefaultAdminPassword" sqlite-tests.log; then
@@ -63,13 +64,13 @@ jobs:
           fi
 
       - name: Run Go tests
-        run: go test -v ./...
+        run: go test -tags "${GO_BUILD_TAGS}" -v ./...
 
       - name: Run Go vet
-        run: go vet ./...
+        run: go vet -tags "${GO_BUILD_TAGS}" ./...
 
-      - name: Build Go binary
-        run: go build
+      - name: Build Go binary with Reality uTLS support
+        run: go build -tags "${GO_BUILD_TAGS}"
 
       - name: Install frontend dependencies
         working-directory: frontend

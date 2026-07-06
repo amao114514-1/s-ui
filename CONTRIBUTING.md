@@ -91,7 +91,7 @@ The backend is built with these tags for full functionality:
 
 - `with_quic`, `with_grpc`, `with_utls`, `with_acme`, `with_gvisor`, `with_tailscale`
 
-Use the same tags when building locally if you need feature parity with releases.
+Use the same tags when building locally if you need feature parity with releases. Reality inbounds require `with_utls`; test, vet, and build with at least that tag when validating Reality behavior.
 
 ### Environment Variables (development)
 
@@ -167,6 +167,8 @@ When adding new features, place code in the appropriate layer (handler → servi
 1. **Build verification**: Before submitting a PR, ensure the project builds:
 
    ```bash
+   go test -tags with_utls -v ./...
+   go vet -tags with_utls ./...
    go build -ldflags "-w -s" -tags "with_quic,with_grpc,with_utls,with_acme,with_gvisor,with_tailscale" -o sui main.go
    ```
 
@@ -177,7 +179,7 @@ When adding new features, place code in the appropriate layer (handler → servi
 ### Running the Linter (optional)
 
 ```bash
-go vet ./...
+go vet -tags with_utls ./...
 # Optional: staticcheck, golangci-lint, etc.
 ```
 

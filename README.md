@@ -195,8 +195,16 @@ To build backend:
 rm -fr web/html/*
 # apply new frontend compiled files
 cp -R frontend/dist/ web/html/
-# build
-go build -o sui main.go
+# build with uTLS support required by Reality
+go build -tags with_utls -o sui main.go
+```
+
+For test deployments that use Reality, validate the Go side with the same build tag:
+
+```shell
+go test -tags with_utls -v ./...
+go vet -tags with_utls ./...
+go build -tags with_utls -o sui main.go
 ```
 
 To run backend (from root folder of repository):

@@ -117,6 +117,12 @@ config_after_install() {
 }
 
 prepare_services() {
+    if ! id -u s-ui >/dev/null 2>&1; then
+        useradd --system --home /usr/local/s-ui --shell /usr/sbin/nologin s-ui
+    fi
+    mkdir -p /usr/local/s-ui/db /usr/local/s-ui/cert /usr/local/s-ui/bin
+    chown -R s-ui:s-ui /usr/local/s-ui/db /usr/local/s-ui/cert /usr/local/s-ui/bin
+
     if [[ -f "/etc/systemd/system/sing-box.service" ]]; then
         echo -e "${yellow}Stopping sing-box service... ${plain}"
         systemctl stop sing-box
@@ -135,26 +141,27 @@ install_s-ui() {
     cd /tmp/
 
     if [ $# == 0 ]; then
-        last_version=$(curl -Ls "https://api.github.com/repos/alireza0/s-ui/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        if [[ ! -n "$last_version" ]]; then
-            echo -e "${red}Failed to fetch s-ui version, it maybe due to Github API restrictions, please try it later${plain}"
-            exit 1
-        fi
-        echo -e "Got s-ui latest version: ${last_version}, beginning the installation..."
-        wget -N --no-check-certificate -O /tmp/s-ui-linux-$(arch).tar.gz https://github.com/alireza0/s-ui/releases/download/${last_version}/s-ui-linux-$(arch).tar.gz
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}Downloading s-ui failed, please be sure that your server can access Github ${plain}"
-            exit 1
-        fi
-    else
-        last_version=$1
-        url="https://github.com/alireza0/s-ui/releases/download/${last_version}/s-ui-linux-$(arch).tar.gz"
-        echo -e "Beginning the install s-ui v$1"
-        wget -N --no-check-certificate -O /tmp/s-ui-linux-$(arch).tar.gz ${url}
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}download s-ui v$1 failed,please check the version exists${plain}"
-            exit 1
-        fi
+        echo -e "${red}Refusing to install an implicit latest release.${plain}"
+        echo -e "Usage: S_UI_SHA256=<sha256> bash install.sh <version>"
+        exit 1
+    fi
+    if [[ -z "${S_UI_SHA256}" ]]; then
+        echo -e "${red}S_UI_SHA256 is required before installing release artifacts.${plain}"
+        exit 1
+    fi
+
+    last_version=$1
+    url="https://github.com/alireza0/s-ui/releases/download/${last_version}/s-ui-linux-$(arch).tar.gz"
+    echo -e "Beginning the install s-ui v$1"
+    wget -N -O /tmp/s-ui-linux-$(arch).tar.gz ${url}
+    if [[ $? -ne 0 ]]; then
+        echo -e "${red}download s-ui v$1 failed,please check the version exists${plain}"
+        exit 1
+    fi
+    echo "${S_UI_SHA256}  /tmp/s-ui-linux-$(arch).tar.gz" | sha256sum -c -
+    if [[ $? -ne 0 ]]; then
+        echo -e "${red}downloaded artifact checksum mismatch${plain}"
+        exit 1
     fi
 
     if [[ -e /usr/local/s-ui/ ]]; then

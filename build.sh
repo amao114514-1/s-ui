@@ -1,7 +1,7 @@
 #!/bin/sh
 
 cd frontend
-npm i
+npm ci
 npm run build
 
 cd ..

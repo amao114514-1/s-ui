@@ -7,8 +7,15 @@ Wants=network.target
 Type=simple
 WorkingDirectory=/usr/local/s-ui/
 ExecStart=/usr/local/s-ui/sui
+User=s-ui
+Group=s-ui
 Restart=on-failure
 RestartSec=10s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/usr/local/s-ui/db /usr/local/s-ui/cert /usr/local/s-ui/bin
 
 [Install]
 WantedBy=multi-user.target

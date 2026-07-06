@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -39,6 +40,13 @@ func (c *AutoHttpsConn) readRequest() bool {
 	}
 	resp := http.Response{
 		Header: http.Header{},
+	}
+	if request.Host == "" || strings.ContainsAny(request.Host, "\r\n") {
+		resp.StatusCode = http.StatusBadRequest
+		resp.Write(c.Conn)
+		c.Close()
+		c.firstBuf = nil
+		return true
 	}
 	resp.StatusCode = http.StatusTemporaryRedirect
 	location := fmt.Sprintf("https://%v%v", request.Host, request.RequestURI)

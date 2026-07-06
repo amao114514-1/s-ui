@@ -6,6 +6,7 @@ import (
 	"github.com/alireza0/s-ui/config"
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/service"
+	"github.com/alireza0/s-ui/util/common"
 )
 
 func resetAdmin() {
@@ -16,11 +17,17 @@ func resetAdmin() {
 	}
 
 	userService := service.UserService{}
-	err = userService.UpdateFirstUser("admin", "admin")
+	username := "admin-" + common.Random(6)
+	password := common.Random(18)
+	err = userService.UpdateFirstUser(username, password)
 	if err != nil {
 		fmt.Println("reset admin credentials failed:", err)
 	} else {
 		fmt.Println("reset admin credentials success")
+		fmt.Println("New admin credentials:")
+		fmt.Println("\tUsername:\t", username)
+		fmt.Println("\tPassword:\t", password)
+		fmt.Println("Save this password now. It will not be shown again.")
 	}
 }
 

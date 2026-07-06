@@ -10,8 +10,15 @@ services:
     tty: true
     restart: unless-stopped
     ports:
-      - "2095:2095"
-      - "2096:2096"
+      - "127.0.0.1:2095:2095"
+      - "127.0.0.1:2096:2096"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
     networks:
       - s-ui
     entrypoint: "./entrypoint.sh"
@@ -19,4 +26,3 @@ services:
 networks:
   s-ui:
     driver: bridge
-  

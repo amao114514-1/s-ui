@@ -137,11 +137,11 @@ docker compose up -d
 ```shell
 mkdir s-ui && cd s-ui
 docker run -itd \
-    -p 2095:2095 -p 2096:2096 -p 443:443 -p 80:80 \
+    -p 127.0.0.1:2095:2095 -p 127.0.0.1:2096:2096 -p 443:443 -p 80:80 \
     -v $PWD/db/:/app/db/ \
     -v $PWD/cert/:/root/cert/ \
     --name s-ui --restart=unless-stopped \
-    alireza7/s-ui:latest
+    alireza7/s-ui:<pinned-version>
 ```
 
 > Build your own image

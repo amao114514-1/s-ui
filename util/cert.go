@@ -1,12 +1,12 @@
 package util
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
-	"net"
 	"os"
 	"strings"
 	"time"
@@ -103,26 +103,27 @@ func GetTlsPing(domain string, port string) (any, error) {
 		port = "443"
 	}
 
-	d := net.Dialer{Timeout: 10 * time.Second}
-	tcpConn, err := d.Dial("tcp", domain+":"+port)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tcpConn, err := DialAllowedTCP(ctx, domain, port, 10*time.Second)
 	if err != nil {
 		return "", common.NewErrorf("Failed to dial tcp: %s", err)
 	}
+	defer tcpConn.Close()
 	tlsConn := utls.UClient(tcpConn, &utls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"h2", "http/1.1"},
 	}, utls.HelloChrome_Auto)
+	defer tlsConn.Close()
 	err = tlsConn.Handshake()
 	if err != nil {
 		return "", common.NewErrorf("Failed to handshake: %s", err)
 	}
-	var leaf *x509.Certificate
-	for _, cert := range tlsConn.ConnectionState().PeerCertificates {
-		if len(cert.DNSNames) != 0 {
-			leaf = cert
-			break
-		}
+	peerCerts := tlsConn.ConnectionState().PeerCertificates
+	if len(peerCerts) == 0 {
+		return "", common.NewError("no leaf certificate")
 	}
+	leaf := peerCerts[0]
 	sum := sha256.Sum256(leaf.RawSubjectPublicKeyInfo)
 	leafObj := map[string]string{
 		"leafHash": base64.StdEncoding.EncodeToString(sum[:]),

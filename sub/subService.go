@@ -47,7 +47,7 @@ func (s *SubService) GetSubs(subId string) (*string, []string, error) {
 func (j *SubService) getClientBySubId(subId string) (*model.Client, error) {
 	db := database.GetDB()
 	client := &model.Client{}
-	err := db.Model(model.Client{}).Where("enable = true and name = ?", subId).First(client).Error
+	err := db.Model(model.Client{}).Where("enable = true and subscription_token = ?", subId).First(client).Error
 	if err != nil {
 		return nil, err
 	}

@@ -3,12 +3,19 @@ package sub
 import (
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/alireza0/s-ui/logger"
 	"github.com/alireza0/s-ui/service"
 
 	"github.com/gin-gonic/gin"
 )
+
+var subAccessRate = struct {
+	sync.Mutex
+	last map[string]time.Time
+}{last: make(map[string]time.Time)}
 
 type SubHandler struct {
 	service.SettingService
@@ -28,6 +35,10 @@ func (s *SubHandler) initRouter(g *gin.RouterGroup) {
 }
 
 func (s *SubHandler) subs(c *gin.Context) {
+	if blockRecentSubMiss(c.ClientIP()) {
+		c.String(404, "Not found")
+		return
+	}
 	var headers []string
 	var result *string
 	var err error
@@ -42,14 +53,16 @@ func (s *SubHandler) subs(c *gin.Context) {
 		}
 		if err != nil || result == nil {
 			logger.Error(err)
-			c.String(400, "Error!")
+			recordSubMiss(c.ClientIP())
+			c.String(404, "Not found")
 			return
 		}
 	} else {
 		result, headers, err = s.SubService.GetSubs(subId)
 		if err != nil || result == nil {
 			logger.Error(err)
-			c.String(400, "Error!")
+			recordSubMiss(c.ClientIP())
+			c.String(404, "Not found")
 			return
 		}
 	}
@@ -60,11 +73,16 @@ func (s *SubHandler) subs(c *gin.Context) {
 }
 
 func (s *SubHandler) subHeaders(c *gin.Context) {
+	if blockRecentSubMiss(c.ClientIP()) {
+		c.String(404, "Not found")
+		return
+	}
 	subId := c.Param("subid")
 	client, err := s.SubService.getClientBySubId(subId)
 	if err != nil {
 		logger.Error(err)
-		c.String(400, "Error!")
+		recordSubMiss(c.ClientIP())
+		c.String(404, "Not found")
 		return
 	}
 
@@ -72,6 +90,26 @@ func (s *SubHandler) subHeaders(c *gin.Context) {
 	s.addHeaders(c, headers)
 
 	c.Status(200)
+}
+
+func blockRecentSubMiss(key string) bool {
+	if key == "" {
+		key = "unknown"
+	}
+	now := time.Now()
+	subAccessRate.Lock()
+	defer subAccessRate.Unlock()
+	last, ok := subAccessRate.last[key]
+	return ok && now.Sub(last) < 500*time.Millisecond
+}
+
+func recordSubMiss(key string) {
+	if key == "" {
+		key = "unknown"
+	}
+	subAccessRate.Lock()
+	defer subAccessRate.Unlock()
+	subAccessRate.last[key] = time.Now()
 }
 
 func (s *SubHandler) addHeaders(c *gin.Context, headers []string) {

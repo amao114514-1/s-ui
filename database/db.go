@@ -10,6 +10,8 @@ import (
 
 	"github.com/alireza0/s-ui/config"
 	"github.com/alireza0/s-ui/database/model"
+	"github.com/alireza0/s-ui/util"
+	"github.com/alireza0/s-ui/util/common"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -25,11 +27,20 @@ func initUser() error {
 		return err
 	}
 	if count == 0 {
-		user := &model.User{
-			Username: "admin",
-			Password: "admin",
+		username := "admin-" + common.Random(6)
+		password := common.Random(18)
+		hashedPassword, err := util.HashPassword(password)
+		if err != nil {
+			return err
 		}
-		return db.Create(user).Error
+		user := &model.User{
+			Username: username,
+			Password: hashedPassword,
+		}
+		if err := db.Create(user).Error; err != nil {
+			return err
+		}
+		log.Printf("generated initial admin credentials: username=%s password=%s", username, password)
 	}
 	return nil
 }
@@ -119,7 +130,28 @@ func InitDB(dbPath string) error {
 	if err != nil {
 		return err
 	}
+	err = initClientSubscriptionTokens()
+	if err != nil {
+		return err
+	}
 
+	return nil
+}
+
+func initClientSubscriptionTokens() error {
+	var clients []model.Client
+	err := db.Model(&model.Client{}).
+		Select("id", "subscription_token").
+		Where("subscription_token = '' OR subscription_token IS NULL").
+		Find(&clients).Error
+	if err != nil {
+		return err
+	}
+	for _, client := range clients {
+		if err := db.Model(&model.Client{}).Where("id = ?", client.Id).Update("subscription_token", common.Random(32)).Error; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

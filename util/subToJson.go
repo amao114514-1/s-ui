@@ -1,42 +1,68 @@
 package util
 
 import (
-	"crypto/tls"
 	"encoding/json"
-	"io"
-	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alireza0/s-ui/logger"
 	"github.com/alireza0/s-ui/util/common"
 )
 
+type externalSubCacheEntry struct {
+	data      string
+	expiresAt time.Time
+}
+
+var externalSubCache = struct {
+	sync.Mutex
+	items map[string]externalSubCacheEntry
+}{items: make(map[string]externalSubCacheEntry)}
+
 func GetExternalLink(url string) string {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-
-	client := &http.Client{Transport: tr, Timeout: 10 * time.Second}
-
-	response, err := client.Get(url)
+	body, err := FetchExternalURL(url, defaultExternalFetchLimit)
 	if err != nil {
-		logger.Warning("sub: Error making HTTP request:", err)
-		return ""
-	}
-	defer response.Body.Close()
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		logger.Warning("sub: Error reading response body:", err)
+		logger.Warning("sub: Error fetching external subscription:", err)
 		return ""
 	}
 
-	data := StrOrBase64Encoded(string(body))
+	data := StrOrBase64Encoded(body)
+	return data
+}
+
+func GetExternalLinkCached(url string) string {
+	now := time.Now()
+	externalSubCache.Lock()
+	if entry, ok := externalSubCache.items[url]; ok && now.Before(entry.expiresAt) {
+		externalSubCache.Unlock()
+		return entry.data
+	}
+	externalSubCache.Unlock()
+
+	data := GetExternalLink(url)
+	if data == "" {
+		return ""
+	}
+
+	externalSubCache.Lock()
+	externalSubCache.items[url] = externalSubCacheEntry{
+		data:      data,
+		expiresAt: now.Add(5 * time.Minute),
+	}
+	externalSubCache.Unlock()
 	return data
 }
 
 func GetExternalSub(url string) ([]map[string]interface{}, error) {
+	return parseExternalSub(url, GetExternalLink)
+}
+
+func GetExternalSubCached(url string) ([]map[string]interface{}, error) {
+	return parseExternalSub(url, GetExternalLinkCached)
+}
+
+func parseExternalSub(url string, fetch func(string) string) ([]map[string]interface{}, error) {
 	var err error
 	var result []map[string]interface{}
 
@@ -44,7 +70,7 @@ func GetExternalSub(url string) ([]map[string]interface{}, error) {
 		return nil, common.NewError("no url")
 	}
 
-	data := GetExternalLink(url)
+	data := fetch(url)
 	if len(data) == 0 {
 		return nil, common.NewError("no result")
 	}

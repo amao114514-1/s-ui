@@ -16,28 +16,28 @@ type Tls struct {
 }
 
 type User struct {
-	Id         uint   `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
-	Username   string `json:"username" form:"username"`
-	Password   string `json:"password" form:"password"`
-	LastLogins string `json:"lastLogin"`
-	SessionVersion int64 `json:"-" gorm:"default:0;not null"`
+	Id             uint   `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
+	Username       string `json:"username" form:"username"`
+	Password       string `json:"password" form:"password"`
+	LastLogins     string `json:"lastLogin"`
+	SessionVersion int64  `json:"-" gorm:"default:0;not null"`
 }
 
 type Client struct {
-	Id       uint            `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
-	Enable   bool            `json:"enable" form:"enable"`
-	Name     string          `json:"name" form:"name"`
-	SubscriptionToken string  `json:"subscriptionToken" form:"subscriptionToken" gorm:"column:subscription_token;uniqueIndex"`
-	Config   json.RawMessage `json:"config,omitempty" form:"config"`
-	Inbounds json.RawMessage `json:"inbounds" form:"inbounds"`
-	Links    json.RawMessage `json:"links,omitempty" form:"links"`
-	Volume   int64           `json:"volume" form:"volume"`
-	Expiry   int64           `json:"expiry" form:"expiry"`
-	Down     int64           `json:"down" form:"down"`
-	Up       int64           `json:"up" form:"up"`
-	Desc     string          `json:"desc" form:"desc"`
-	Group    string          `json:"group" form:"group"`
-	Remark   string          `json:"remark" form:"remark"`
+	Id                uint            `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
+	Enable            bool            `json:"enable" form:"enable"`
+	Name              string          `json:"name" form:"name"`
+	SubscriptionToken string          `json:"subscriptionToken" form:"subscriptionToken" gorm:"column:subscription_token;uniqueIndex"`
+	Config            json.RawMessage `json:"config,omitempty" form:"config"`
+	Inbounds          json.RawMessage `json:"inbounds" form:"inbounds"`
+	Links             json.RawMessage `json:"links,omitempty" form:"links"`
+	Volume            int64           `json:"volume" form:"volume"`
+	Expiry            int64           `json:"expiry" form:"expiry"`
+	Down              int64           `json:"down" form:"down"`
+	Up                int64           `json:"up" form:"up"`
+	Desc              string          `json:"desc" form:"desc"`
+	Group             string          `json:"group" form:"group"`
+	Remark            string          `json:"remark" form:"remark"`
 
 	// Timestamps (unix seconds): creation time and last time the client had traffic
 	CreatedAt int64 `json:"createdAt" form:"createdAt" gorm:"default:0;not null"`

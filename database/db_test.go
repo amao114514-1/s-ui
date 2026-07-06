@@ -2,6 +2,7 @@ package database
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/alireza0/s-ui/database/model"
@@ -11,6 +12,9 @@ import (
 func TestInitDBDoesNotCreateDefaultAdminPassword(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "s-ui.db")
 	if err := InitDB(dbPath); err != nil {
+		if strings.Contains(err.Error(), "go-sqlite3 requires cgo") {
+			t.Skipf("sqlite cgo is unavailable in this test environment: %v", err)
+		}
 		t.Fatal(err)
 	}
 

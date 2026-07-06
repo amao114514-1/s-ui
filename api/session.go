@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	loginUser = "LOGIN_USER"
-	csrfToken = "CSRF_TOKEN"
+	loginUser           = "LOGIN_USER"
+	csrfToken           = "CSRF_TOKEN"
 	loginSessionVersion = "LOGIN_SESSION_VERSION"
-	loginAt = "LOGIN_AT"
+	loginAt             = "LOGIN_AT"
 )
 
 func init() {

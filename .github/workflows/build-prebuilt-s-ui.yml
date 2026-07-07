@@ -1,0 +1,113 @@
+name: Build prebuilt S-UI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build linux amd64 binary with uTLS
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: prebuilt-latest
+      ASSET_NAME: s-ui-linux-amd64-with_utls
+    steps:
+      - name: Checkout hardened branch with frontend submodule
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: security-hardening-a-b
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          test -f dist/index.html
+
+      - name: Copy frontend assets for Go embed
+        run: |
+          rm -rf web/html
+          mkdir -p web/html
+          cp -a frontend/dist/. web/html/
+          test -f web/html/index.html
+
+      - name: Setup Go from go.mod
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Build linux amd64 binary with Reality uTLS support
+        env:
+          CGO_ENABLED: "1"
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          mkdir -p dist
+          go build -v -tags with_utls -o "dist/${ASSET_NAME}"
+          chmod 755 "dist/${ASSET_NAME}"
+
+      - name: Verify binary and generate checksum
+        run: |
+          file "dist/${ASSET_NAME}" | tee "dist/${ASSET_NAME}.file"
+          grep -Eq 'ELF 64-bit.*x86-64|ELF 64-bit.*x86_64' "dist/${ASSET_NAME}.file"
+          (cd dist && sha256sum "${ASSET_NAME}" > "${ASSET_NAME}.sha256")
+          cat "dist/${ASSET_NAME}.sha256"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: s-ui-linux-amd64-with_utls
+          path: |
+            dist/s-ui-linux-amd64-with_utls
+            dist/s-ui-linux-amd64-with_utls.sha256
+          if-no-files-found: error
+
+      - name: Publish or update prebuilt release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "${RELEASE_TAG}" "${GITHUB_SHA}"
+          git push origin "refs/tags/${RELEASE_TAG}" --force
+
+          cat > release-notes.md <<EOF
+          Prebuilt S-UI binary for Ubuntu/Debian amd64 VPS.
+
+          Branch: security-hardening-a-b
+          Commit: ${GITHUB_SHA}
+          Build tags: with_utls
+          Assets:
+          - ${ASSET_NAME}
+          - ${ASSET_NAME}.sha256
+          EOF
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" \
+              --title "Prebuilt S-UI latest with uTLS" \
+              --notes-file release-notes.md
+          else
+            gh release create "${RELEASE_TAG}" \
+              --title "Prebuilt S-UI latest with uTLS" \
+              --notes-file release-notes.md
+          fi
+
+          gh release upload "${RELEASE_TAG}" \
+            "dist/${ASSET_NAME}" \
+            "dist/${ASSET_NAME}.sha256" \
+            --clobber

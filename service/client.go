@@ -17,6 +17,8 @@ import (
 
 type ClientService struct{}
 
+const secondsPerDay int64 = 86400
+
 func ActiveClientWhere(extra string) string {
 	where := "enable = true AND (volume = 0 OR up + down <= volume) AND (expiry = 0 OR expiry >= ?)"
 	if strings.TrimSpace(extra) != "" {
@@ -41,6 +43,41 @@ func IsClientActive(client *model.Client, now int64) bool {
 		return false
 	}
 	return true
+}
+
+func nextResetAfter(previous int64, now int64, resetDays int) int64 {
+	if resetDays <= 0 {
+		return 0
+	}
+	period := int64(resetDays) * secondsPerDay
+	if previous <= 0 {
+		previous = now
+	}
+	for previous <= now {
+		previous += period
+	}
+	return previous
+}
+
+func (s *ClientService) normalizeResetSchedule(client *model.Client, now int64) {
+	if client.ResetDays < 0 {
+		client.ResetDays = 0
+	}
+	if client.AutoReset || client.DelayStart {
+		if client.ResetDays <= 0 {
+			client.ResetDays = 1
+		}
+	}
+	if !client.AutoReset {
+		client.NextReset = 0
+		return
+	}
+	if client.DelayStart {
+		return
+	}
+	if client.NextReset <= 0 {
+		client.NextReset = now + int64(client.ResetDays)*secondsPerDay
+	}
 }
 
 func (s *ClientService) Get(id string) (*[]model.Client, error) {
@@ -76,6 +113,7 @@ func (s *ClientService) GetAll() (*[]model.Client, error) {
 func (s *ClientService) Save(tx *gorm.DB, act string, data json.RawMessage, hostname string) ([]uint, error) {
 	var err error
 	var inboundIds []uint
+	now := time.Now().Unix()
 
 	switch act {
 	case "new", "edit":
@@ -101,12 +139,13 @@ func (s *ClientService) Save(tx *gorm.DB, act string, data json.RawMessage, host
 			// Preserve managed timestamps (immutable createdAt, stats-managed onlineAt)
 			s.preserveExistingFields(tx, &client)
 		} else {
-			client.CreatedAt = time.Now().Unix()
+			client.CreatedAt = now
 			err = json.Unmarshal(client.Inbounds, &inboundIds)
 			if err != nil {
 				return nil, err
 			}
 		}
+		s.normalizeResetSchedule(&client, now)
 		err = tx.Save(&client).Error
 		if err != nil {
 			return nil, err
@@ -117,13 +156,13 @@ func (s *ClientService) Save(tx *gorm.DB, act string, data json.RawMessage, host
 		if err != nil {
 			return nil, err
 		}
-		now := time.Now().Unix()
 		for _, client := range clients {
 			if err = setConfigIdentity(client); err != nil {
 				return nil, err
 			}
 			s.ensureSubscriptionToken(client)
 			client.CreatedAt = now
+			s.normalizeResetSchedule(client, now)
 			var ids []uint
 			if err = json.Unmarshal(client.Inbounds, &ids); err != nil {
 				return nil, err
@@ -154,6 +193,7 @@ func (s *ClientService) Save(tx *gorm.DB, act string, data json.RawMessage, host
 			}
 			s.preserveExistingFields(tx, client)
 			s.ensureSubscriptionToken(client)
+			s.normalizeResetSchedule(client, now)
 			if len(changedInboundIds) > 0 {
 				inboundIds = common.UnionUintArray(inboundIds, changedInboundIds)
 			}
@@ -527,13 +567,14 @@ func (s *ClientService) ResetClients(tx *gorm.DB, dt int64) ([]uint, error) {
 	var changes []model.Changes
 	var inboundIds []uint
 	// Set delay start without periodic reset
+	resetClients = nil
 	err = tx.Model(model.Client{}).
-		Where("enable = true AND delay_start = true AND auto_reset = false AND (Up + Down) > 0").Find(&resetClients).Error
+		Where("enable = true AND delay_start = true AND auto_reset = false AND reset_days > 0 AND (Up + Down) > 0").Find(&resetClients).Error
 	if err != nil {
 		return nil, err
 	}
 	for _, client := range resetClients {
-		client.Expiry = dt + (int64(client.ResetDays) * 86400)
+		client.Expiry = dt + (int64(client.ResetDays) * secondsPerDay)
 		client.DelayStart = false
 		changes = append(changes, model.Changes{
 			DateTime: dt,
@@ -546,13 +587,14 @@ func (s *ClientService) ResetClients(tx *gorm.DB, dt int64) ([]uint, error) {
 	allClients = append(allClients, resetClients...)
 
 	// Set delay start with periodic reset
+	resetClients = nil
 	err = tx.Model(model.Client{}).
-		Where("enable = true AND delay_start = true AND auto_reset = true AND (Up + Down) > 0").Find(&resetClients).Error
+		Where("enable = true AND delay_start = true AND auto_reset = true AND reset_days > 0 AND (Up + Down) > 0").Find(&resetClients).Error
 	if err != nil {
 		return nil, err
 	}
 	for _, client := range resetClients {
-		client.NextReset = dt + (int64(client.ResetDays) * 86400)
+		client.NextReset = dt + (int64(client.ResetDays) * secondsPerDay)
 		client.DelayStart = false
 		changes = append(changes, model.Changes{
 			DateTime: dt,
@@ -564,24 +606,50 @@ func (s *ClientService) ResetClients(tx *gorm.DB, dt int64) ([]uint, error) {
 	}
 	allClients = append(allClients, resetClients...)
 
-	// Set periodic reset
+	// Initialize periodic reset schedules for long-lived clients whose account
+	// expiry is independent from the traffic cycle.
+	resetClients = nil
 	err = tx.Model(model.Client{}).
-		Where("delay_start = false AND auto_reset = true AND next_reset < ?", dt).Find(&resetClients).Error
+		Where("delay_start = false AND auto_reset = true AND reset_days > 0 AND next_reset <= 0").Find(&resetClients).Error
 	if err != nil {
 		return nil, err
 	}
 	for _, client := range resetClients {
-		client.NextReset = dt + (int64(client.ResetDays) * 86400)
+		client.NextReset = dt + (int64(client.ResetDays) * secondsPerDay)
+	}
+	allClients = append(allClients, resetClients...)
+
+	// Set periodic reset
+	resetClients = nil
+	err = tx.Model(model.Client{}).
+		Where("delay_start = false AND auto_reset = true AND reset_days > 0 AND next_reset > 0 AND next_reset < ?", dt).Find(&resetClients).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, client := range resetClients {
+		wasActive := IsClientActive(client, dt)
+		client.NextReset = nextResetAfter(client.NextReset, dt, client.ResetDays)
 		client.TotalUp += client.Up
 		client.TotalDown += client.Down
 		client.Up = 0
 		client.Down = 0
-		if !client.Enable {
+		if client.Expiry == 0 || client.Expiry >= dt {
 			client.Enable = true
+		}
+		if wasActive != IsClientActive(client, dt) {
 			var clientInboundIds []uint
-			json.Unmarshal(client.Inbounds, &clientInboundIds)
+			if err = json.Unmarshal(client.Inbounds, &clientInboundIds); err != nil {
+				return nil, err
+			}
 			inboundIds = common.UnionUintArray(inboundIds, clientInboundIds)
 		}
+		changes = append(changes, model.Changes{
+			DateTime: dt,
+			Actor:    "ResetJob",
+			Key:      "clients",
+			Action:   "reset",
+			Obj:      json.RawMessage("\"" + client.Name + "\""),
+		})
 	}
 	allClients = append(allClients, resetClients...)
 

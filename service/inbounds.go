@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
@@ -299,10 +300,11 @@ func (s *InboundService) fetchUsers(db *gorm.DB, inboundType string, condition s
 
 	var users []string
 
+	now := time.Now().Unix()
 	err := db.Raw(
 		fmt.Sprintf(`SELECT json_extract(clients.config, "$.%s")
-		FROM clients WHERE enable = true AND %s`,
-			configKey, condition), args...).Scan(&users).Error
+		FROM clients WHERE %s`,
+			configKey, ActiveClientWhere(condition)), ActiveClientArgs(now, args...)...).Scan(&users).Error
 	if err != nil {
 		return nil, err
 	}

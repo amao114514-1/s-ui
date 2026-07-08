@@ -17,6 +17,32 @@ import (
 
 type ClientService struct{}
 
+func ActiveClientWhere(extra string) string {
+	where := "enable = true AND (volume = 0 OR up + down <= volume) AND (expiry = 0 OR expiry >= ?)"
+	if strings.TrimSpace(extra) != "" {
+		where += " AND " + extra
+	}
+	return where
+}
+
+func ActiveClientArgs(now int64, args ...interface{}) []interface{} {
+	activeArgs := []interface{}{now}
+	return append(activeArgs, args...)
+}
+
+func IsClientActive(client *model.Client, now int64) bool {
+	if client == nil || !client.Enable {
+		return false
+	}
+	if client.Volume > 0 && client.Up+client.Down > client.Volume {
+		return false
+	}
+	if client.Expiry > 0 && client.Expiry < now {
+		return false
+	}
+	return true
+}
+
 func (s *ClientService) Get(id string) (*[]model.Client, error) {
 	if id == "" {
 		return s.GetAll()
@@ -458,7 +484,7 @@ func (s *ClientService) DepleteClients() ([]uint, error) {
 	}
 
 	// Deplete clients
-	err = tx.Model(model.Client{}).Where("enable = true AND ((volume >0 AND up+down > volume) OR (expiry > 0 AND expiry < ?))", dt).Scan(&clients).Error
+	err = tx.Model(model.Client{}).Where("enable = true AND ((volume > 0 AND up + down > volume) OR (expiry > 0 AND expiry < ?))", dt).Scan(&clients).Error
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +507,7 @@ func (s *ClientService) DepleteClients() ([]uint, error) {
 
 	// Save changes
 	if len(changes) > 0 {
-		err = tx.Model(model.Client{}).Where("enable = true AND ((volume >0 AND up+down > volume) OR (expiry > 0 AND expiry < ?))", dt).Update("enable", false).Error
+		err = tx.Model(model.Client{}).Where("enable = true AND ((volume > 0 AND up + down > volume) OR (expiry > 0 AND expiry < ?))", dt).Update("enable", false).Error
 		if err != nil {
 			return nil, err
 		}
@@ -660,9 +686,10 @@ func (s *ClientService) findInboundsChanges(tx *gorm.DB, client *model.Client, f
 	}
 
 	// Check client.Config changes
+	now := time.Now().Unix()
 	if !bytes.Equal(oldClient.Config, client.Config) ||
 		oldClient.Name != client.Name ||
-		oldClient.Enable != client.Enable {
+		IsClientActive(&oldClient, now) != IsClientActive(client, now) {
 		return common.UnionUintArray(oldInboundIds, newInboundIds), nil
 	}
 

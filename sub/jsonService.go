@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
@@ -89,7 +90,8 @@ func (j *JsonService) GetJson(subId string, format string) (*string, []string, e
 func (j *JsonService) getData(subId string) (*model.Client, []*model.Inbound, error) {
 	db := database.GetDB()
 	client := &model.Client{}
-	err := db.Model(model.Client{}).Where("enable = true and subscription_token = ?", subId).First(client).Error
+	now := time.Now().Unix()
+	err := db.Model(model.Client{}).Where(service.ActiveClientWhere("subscription_token = ?"), service.ActiveClientArgs(now, subId)...).First(client).Error
 	if err != nil {
 		return nil, nil, err
 	}

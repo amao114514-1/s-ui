@@ -399,18 +399,59 @@ func (s *SettingService) GetCanonicalHost(requestHost string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if (*allSetting)["webDomain"] != "" {
-		return (*allSetting)["webDomain"], nil
+	if host := configuredHost((*allSetting)["webURI"]); host != "" {
+		return host, nil
 	}
-	if (*allSetting)["webURI"] != "" {
-		if parsed, err := url.Parse((*allSetting)["webURI"]); err == nil && parsed.Hostname() != "" {
-			return parsed.Hostname(), nil
+	if (*allSetting)["webDomain"] != "" {
+		if host := configuredHost((*allSetting)["webDomain"]); host != "" {
+			return host, nil
 		}
 	}
 	if isLocalHost(requestHost) {
 		return requestHost, nil
 	}
 	return "127.0.0.1", nil
+}
+
+func configuredHost(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	candidates := []string{value}
+	if !strings.Contains(value, "://") && !strings.HasPrefix(value, "//") {
+		candidates = append([]string{"//" + value}, candidates...)
+	}
+	for _, candidate := range candidates {
+		parsed, err := url.Parse(candidate)
+		if err != nil {
+			continue
+		}
+		if host := parsed.Hostname(); host != "" {
+			return normalizeLinkHost(host)
+		}
+	}
+
+	host := value
+	if beforeSlash, _, found := strings.Cut(host, "/"); found {
+		host = beforeSlash
+	}
+	if splitHost, _, err := net.SplitHostPort(host); err == nil {
+		host = splitHost
+	}
+	return normalizeLinkHost(host)
+}
+
+func normalizeLinkHost(host string) string {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		return ""
+	}
+	if ip := net.ParseIP(host); ip != nil && strings.Contains(host, ":") {
+		return "[" + host + "]"
+	}
+	return host
 }
 
 func isLocalHost(host string) bool {
